@@ -1,0 +1,676 @@
+---
+title: "Time Series Analysis of Hotel Room Occupancy in Hawaii"
+author: "Sebastian Naibaho"
+date: "6/5/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+# ABSTRACT
+
+In this report, I will analyze and model time series data on hotel room occupancy in Hawaii. The goal of this report is to forecast future Hawaii hotel occupancy rates with respect to each of the four quarters per year.
+
+Before I begin modeling the data, I will remove trend and seasonality. To obtain my potential model, I will observe significant lags in the ACF and PACF plots. To choose my fitted model, I will choose the model with the lowest AICc value. To diagnose the results of my fitted model, I will perform the Shapiro-Wilk test, the Box-Ljung test, the Box-Pierce test, the McLeod-Li test, and plot the ACF, PACF, histogram, and QQ Plot of the fitted model.
+
+# INTRODUCTION
+
+The dataset I chose for this project is the "Tourism" dataset on Hawaii's Research and Economic Analysis website, specifically the hotel room occupancy rate table. This is a quarterly dataset from January 1, 1982 to May 31, 2020. However, I chose to model this dataset from January 1, 1982 to December 31, 2013 because the data was difficult to model accurately from 2014 onward, which could be attributed to the rise of ISIS-related foreign policy changes in 2014 and the COVID-19 pandemic in 2020. However, aside from the 2008 recession, the dataset seemed stable prior to 2013.
+
+Hawaii's economy is largely dependent on tourism, so hotel room occupancy is a strong measure of both its current tourist popularity as well as its economic health. Hence, if one is able to predict hotel room occupancy in Hawaii, one can also easily predict the concentration of tourism and its economic health at a given time.
+
+I used RStudio to formulate all code related to modeling the information, as well Microsoft Excel to clean the dataset while working on this project.
+
+## 1) READ IN THE DATA
+```{r, message=FALSE}
+library(readr)
+file <- read_csv("~/UCSB/Spring 2020/PSTAT 174/Final Project/file.csv")
+```
+
+## 2) LOAD THE DATASET WITH START DATE AND INTERVAL FREQUENCY
+```{r, results="hide"}
+yearRate <- read.table("file.csv", header=TRUE, sep=",")
+yearRate
+
+rate = ts(yearRate[,2], start=c(1982,1), end=c(2013,12), frequency = 4)
+```
+
+## 3) PLOT THE TIME SERIES DATA
+```{r, echo=FALSE}
+ts.plot(rate, ylab ="Percentage of Hotel Rooms Occupied", main = "Hotel Room Occupancy")
+
+library(MASS)
+t = 1:length(rate)
+fit = lm(rate~t)
+bcTransform = boxcox(rate~t,plotit = TRUE)
+```
+
+Based on the results of the Box-Cox, I decided to try setting $\lambda=1.5$ and $\lambda=0$ (a log transformation) since 0 was inside the confidence interval.
+
+## 4) EXPLORE BOX-COX TRANSFORMATIONS
+```{r, echo=FALSE}
+lambda = bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+rate_BoxCoX = (1/lambda)*(rate^lambda-1)
+
+rate_BoxCoX_LOG = log(rate)
+
+par(mfrow=c(1,2))
+ts.plot(rate_BoxCoX)
+ts.plot(rate_BoxCoX_LOG)
+ts.plot(rate, ylab ="Percentage of Hotel Rooms Occupied", main = "Hotel Room Occupancy")
+```
+
+After plotting both transformations, I noticed that they looked very similar to the original time series. Since 1 was also inside the confidence interval of the Box-Cox plot, I concluded that $\lambda=1$ is satisfactory and that no transformation is necessary. Therefore, I chose to forego a transformation to keep the data simpler.
+
+After deciding that variance was constant, I investigated its trend using the stl() function:
+
+```{r, echo=FALSE}
+plot(stl(rate, "periodic"))
+```
+
+This stl plot shows that the majority of the variation in the data comes from a trend. We can tell by the unit bar being smaller than that of the seasonal or residual components. Therefore, I differenced the data at lag=1 to make the mean constant over time.
+
+## 5) DIFFERENCE AT LAG = 1 TO REMOVE TREND, MAKES MEAN CONSTANT
+```{r, echo=FALSE}
+rate_BC_D1 = diff(rate, lag = 1)
+ts.plot(rate_BC_D1)
+abline(h = 0,lty = 2)
+```
+
+Since I know that the dataset is seasonal, I investigated its seasonality using the stl() function once more:
+
+```{r, echo=FALSE}
+plot(stl(rate_BC_D1, "periodic"))
+```
+
+A decomposition of the time series into its different components showed that, as expected, a seasonal component is present in the data. We can see that the unit bar for the seasonal component is now the smallest. The plot of the detrended data indicates 10 peaks within each 5-year period, suggesting a differencing of lag=2 to remove seasonality. I also considered a differencing of lag=4 due to the dataset being quarterly as well as being yearly.
+
+## 6) DIFFERENCE AGAIN AT LAG = 4 TO REMOVE SEASONALITY
+```{r, echo=FALSE}
+par(mfrow=c(1,2))
+
+rate_BC_d2 = diff(rate_BC_D1, lag = 2)
+ts.plot(rate_BC_d2)
+abline(h = 0,lty = 2)
+
+rate_BC_D2 = diff(rate_BC_D1, lag = 4)
+ts.plot(rate_BC_D2)
+abline(h = 0,lty = 2)
+```
+
+The deseasonlized data at lag=4 seems more stationary than the deseasonalized data at lag=2. I then compared the variances of each of these new datasets to determine which differencing made the time series most stationary.
+
+```{r, echo=FALSE}
+print(c("Variance of the transformed timeseries at 2nd lag=2 is: ", var(rate_BC_d2)))
+print(c("Variance of the transformed timeseries at 2nd lag=4 is: ", var(rate_BC_D2)))
+```
+
+The variance is lowest when I used data differenced at lag=4, so I decided to use this data moving forward.
+
+## 7) EXAMINE THE ACF AND PACF (rate_BC_D2)
+```{r, echo=FALSE}
+op = par(mfrow = c(1,2))
+acf(rate_BC_D2,lag.max = 20,main = "")
+pacf(rate_BC_D2,lag.max = 20,main = "")
+title("De-trended/seasonalized Time Series",line = -1, outer=TRUE)
+```
+
+## 8) MODEL ESTIMATION
+
+Looking at the ACF, SARIMA(O,1,4)x(0,1,1)$_{S=4}$ is a candidate model because:
+
+* q=4 because the ACF cuts off at 4
+* d=1 because I differenced once to remove the trend
+* Q=1 because the ACF cuts off at lag=1
+* D=1 because I differenced once more to remove seasonality
+* S=4 because I deseasonalized at lag=4
+
+Looking at the PACF, SARIMA(8,1,0)x(2,1,0)$_{S=4}$ is a candidate model because:
+
+* p=8 because the PACF plot cuts off at 4
+* d=1 because I differenced once to remove the trend
+* P=2 because the PACF cuts off at lag=2
+* D=1 because I differenced once more to remove seasonality
+* S=4 because I deseasonalized at lag=4
+
+Both graphs cut off, so I suspect that there is both an MA and AR component. We want a candidate model including both components for p and q. So, I conducted a for loop checking for the lowest AICc for all models with values of p up to 8 and q up to 4 due to what I saw in the ACF and PACF plots. This process yielded the candidate model SARIMA(4,1,2)x(0,1,0)$_S=4$.
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(qpcR)
+library(astsa)
+
+aiccs = matrix(NA, nr=45, nc=3)
+colnames(aiccs) = c("p","q","AICc")
+i=0
+d=0
+for (p in 0:8) {
+  for (q in 0:4) {
+    aiccs[i+1, 1] = p
+    aiccs[i+1, 2] = q
+    aiccs[i+1, 3] = sarima(rate_BC_D2,p,d,q,P=1,D=1,Q=1,S=4,details=FALSE)$AICc
+    i=i+1
+  }
+}
+
+# Models with the first three smallest AICc
+aiccs[order(aiccs[,3])[1:3],]
+```
+```{r, warning=FALSE, echo=FALSE}
+aiccS = matrix(NA, nr=45, nc=3)
+colnames(aiccS) = c("p","q","AICc")
+i=0
+d=0
+for (p in 0:8) {
+  for (q in 0:4) {
+    aiccS[i+1, 1] = p
+    aiccS[i+1, 2] = q
+    aiccS[i+1, 3] = sarima(rate_BC_D2,p,d,q,P=0,D=1,Q=1,S=4,details=FALSE)$AICc
+    i=i+1
+  }
+}
+
+# Models with the first three smallest AICc
+aiccS[order(aiccS[,3])[1:3],]
+```
+
+To generate more candidate models, I also used the auto.arima() function, which suggested I use a SARIMA(1,0,0)x(1,1,1)$_{S=4}$ model.
+
+```{r, message=FALSE, echo=FALSE}
+library(forecast)
+auto.arima(rate)
+```
+
+In conclusion, the candidate models I decided to test were:
+
+SARIMA(0,1,4)x(0,1,1)$_{S=4}$ - from ACF plot of the de-seasonalized data at lag=4
+
+SARIMA(8,1,0)x(2,1,0)$_{S=4}$ - from PACF plot of the de-seasonalized data at lag=4
+
+SARIMA(4,1,2)x(0,1,0)$_{S=4}$ - from the for loop of values p and q
+
+SARIMA(1,0,0)x(1,1,1)$_{S=4}$ - from the auto.arima() on original data
+
+```{r, echo=FALSE}
+fit.1 = sarima(rate,0,1,4,0,1,1,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(0,1,4)x(0,1,1)_S=4 are: ", c(fit.1$AICc, fit.1$BIC)))
+
+fit.2 = sarima(rate,8,1,0,2,1,0,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(8,1,0)x(2,1,0)_S=4 are: ", c(fit.2$AICc, fit.2$BIC)))
+
+fit.3 = sarima(rate,4,1,2,0,1,0,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(4,1,2)x(0,1,0)_S=4 are: ", c(fit.3$AICc, fit.3$BIC)))
+
+fit.4 = sarima(rate,1,0,0,1,1,0,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(1,0,0)x(1,1,1)+S=4 are: ", c(fit.4$AICc, fit.4$BIC)))
+```
+
+Based off of each model's AICc values, the two best models are:
+SARIMA(1,0,0)x(1,1,1)$_{S=4}$ because it has the lowest AICc and BIC
+
+## 9) FIT CANDIDATE MODELS
+
+```{r, echo=FALSE}
+fit <- arima(rate, order=c(1,0,0), seasonal=list(order=c(1,1,1), period=4))
+rsdls = residuals(fit)
+fit$coef
+```
+
+## 10) PLOT THE AR AND MA ROOTS ON THE UNIT CIRCLE
+```{r, echo=FALSE}
+plot(fit)
+```
+```{r, echo=FALSE}
+plot.roots <- function(ar.roots=NULL, ma.roots=NULL, size=2, angles=FALSE, special=NULL, sqecial=NULL,my.pch=1,first.col="blue",second.col="red",main=NULL)
+{xylims <- c(-size,size)
+      omegas <- seq(0,2*pi,pi/500)
+      temp <- exp(complex(real=rep(0,length(omegas)),imag=omegas))
+      plot(Re(temp),Im(temp),typ="l",xlab="x",ylab="y",xlim=xylims,ylim=xylims,main=main)
+      abline(v=0,lty="dotted")
+      abline(h=0,lty="dotted")
+      if(!is.null(ar.roots))
+        {
+          points(Re(1/ar.roots),Im(1/ar.roots),col=first.col,pch=my.pch)
+          points(Re(ar.roots),Im(ar.roots),col=second.col,pch=my.pch)
+        }
+      if(!is.null(ma.roots))
+        {
+          points(Re(1/ma.roots),Im(1/ma.roots),pch="*",cex=1.5,col=first.col)
+          points(Re(ma.roots),Im(ma.roots),pch="*",cex=1.5,col=second.col)
+        }
+      if(angles)
+        {
+          if(!is.null(ar.roots))
+            {
+              abline(a=0,b=Im(ar.roots[1])/Re(ar.roots[1]),lty="dotted")
+              abline(a=0,b=Im(ar.roots[2])/Re(ar.roots[2]),lty="dotted")
+            }
+          if(!is.null(ma.roots))
+            {
+              sapply(1:length(ma.roots), function(j) abline(a=0,b=Im(ma.roots[j])/Re(ma.roots[j]),lty="dotted"))
+            }
+        }
+      if(!is.null(special))
+        {
+          lines(Re(special),Im(special),lwd=2)
+        }
+      if(!is.null(sqecial))
+        {
+          lines(Re(sqecial),Im(sqecial),lwd=2)
+        }
+}
+
+plot.roots(NULL,polyroot(c(1, 0.6711421)),main="Roots of AR part")
+
+plot.roots(NULL,polyroot(c(1, 0.3107242)), main="Roots of SAR part")
+
+plot.roots(NULL,polyroot(c(1, -0.9528503)), main="Roots of SMA part")
+```
+
+Because the both AR and MA roots are within the unit circle, our model is neither causal nor invertible.
+
+## 11) Plot of residuals
+```{r, echo=FALSE}
+plot(rsdls, main="Fitted Residuals")
+```
+
+## 12) PLOT OF ACF, PACF, HISTOGRAM and QQPLOT
+
+I then performed model diagnostics on each of these models to ensure that the residuals mimic the behavior of a white noise process.
+
+```{r, echo=FALSE}
+op <- par(mfrow=c(2,2))
+acf(rsdls,main = "Autocorrelation")
+pacf(rsdls,main = "Partial Autocorrelation")
+hist(rsdls,main = "Histogram")
+qqnorm(rsdls,main = "QQPlot")
+qqline(rsdls,col="blue")
+par(op)
+```
+
+## 13) DIAGNOSTIC TESTS
+```{r, echo=FALSE}
+# Residuals of SARIMA(1,0,0)x(1,1,1)
+
+# SHAPIRO WILK NORMALITY TEST
+shapiro.test(rsdls)
+
+# Ljung-Box TEST
+Box.test(rsdls, type = "Ljung-Box", lag = 11, fitdf = 3)
+
+# Box-Pierce TEST
+Box.test(rsdls, type = "Box-Pierce", lag = 11, fitdf = 3)
+
+# McLeod-Li TEST
+Box.test(rsdls^2, type = "Box-Pierce", lag = 11, fitdf = 0)
+```
+
+For this model:
+
+* The time series plot of the standardized residuals appears stationary.
+
+* The ACF of the residuals falls within the confidence interval, as a white noise process would.
+
+* The empirical residuals skew slightly from the theoretical residuals on the normal Q-Q plot, which is likely due to extreme outliers.
+
+* The Box-Ljung test, Box-Pierce, and McLeod-Li tests each give us a p-value > 0.05, indicating that the residuals are independent.
+
+* However, the Shapiro-Wilk normality test gave us a p-value far less than 0.05, which strongly suggests that the residuals are not normally distributed.
+
+Thus, we can conlcude that SARIMA(1,0,0)x(1,1,1)$_{S=4}$ is the best linear model for the data. Although, it is worth noting that a non-linear model would be better suited for the data.
+
+## 14) PARAMETER ESTIMATION
+
+```{r, echo=FALSE}
+lmtest::coeftest(fit)
+round(confint(fit), 3)
+```
+
+These confidence intervals show us that both the AR and seasonal AR components are significant in our model, while the seasonal MA components are insignificant.
+
+## 15) FORECASTING
+
+```{r, echo=FALSE}
+# Forecasting ahead
+forecast_Series <- predict(fit, n.ahead = 15)
+values = ((forecast_Series$pred))
+errors = ((forecast_Series$se))
+
+#errors = forecast_series$se
+print(values)
+print(errors)
+rate_2013 = ts(file[,2], start=c(1982,1), end=c(2016,12), frequency = 4)
+ts.plot(rate_2013)
+
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+```
+
+This plots forecasts 15 quarters into the future (from the start of 2016 to the third quarter of 2019) surrounded by a 95% confidence interval. The model predicts that the percentage of occupied hotels in Hawaii will remain relatively constant over those 4 years. Since the modeled dataset ends in 2013, this prediction will actually go up to the current time. Therefore, we can ensure that the model is making accurate predictions by comparing it the original data.
+
+```{r, echo=FALSE}
+# Forecasting ahead
+forecast_series <- predict(fit, n.ahead = 15)
+values = ((forecast_series$pred))
+errors = ((forecast_series$se))
+
+par(mfrow=c(1,2))
+ts.plot(forecast_series$pred, main="Predicted Hotel Occupancy Rate")
+ts.plot(file$rate[c(137:152)], main="True Hotel Occupancy Rate")
+# The plot labeled "True Hotel Occupancy Rate" is from 2016 to 2019
+```
+
+In the two graphs above, I compared a plot of the predicted hotel occupancy rate with the true hotel occupancy rate of 2016-2019. Because the seasonal component is significant and the variance from the true values seems to be low, we will use this model to predict 15 quarters ahead, which would give us predictions until the 2nd quarter of 2023.
+
+```{r, echo=FALSE}
+# Forecasting ahead
+forecast_Series <- predict(fit, n.ahead = 30)
+values = ((forecast_Series$pred))
+errors = ((forecast_Series$se))
+
+#errors = forecast_series$se
+print(values)
+print(errors)
+rate_2013 = ts(file[,2], start=c(1982,1), end=c(2023,12), frequency = 4)
+ts.plot(rate_2013)
+
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+```
+
+The model predicts a relatively constant hotel occupancy rate over the next 4 years, with a very slight increase.
+
+# ALGEBRAIC EQUATION OF THE MODEL
+
+The math formula for the $SARIMA(1,0,0)(1,1,1)_{S=4}$ model is $(1-0.6711B)(1-0.3107B^4)(1-B^4)X_t=(1-0.9529B^4)Z_t$, which simplifies to:
+
+$X_t=0.6711X_{t-1}+1.3107X_{t-4}-1.19031077X_{t-5}+0.20851077X_{t-9}+Z_t-0.9529Z_{t-4}$
+
+# CONCLUSION
+
+The forecasted model predicts a slight increase in tourism over the next 4 years. Moreover, Hawaii already predicts an increase in tourism for the next few years, which the model agrees with. With this increase in tourism, the model predicts that Hawaii will have a healthy economy for the next few years. However, with the unforseen impact of COVID-19, tourism has taken a hit. With the low flow of tourists, hotels would be incentivized to lower prices of hotel rooms to entice people to book rooms to maintain at least some income. Hotel owners may also choose to offer deals or packages during this season. This could mean an overall cheaper visit due to cheaper flights and lodging. Someone looking to visit Hawaii can use this analysis to plan a trip during periods of time where prices will be cheaper, such as right now.
+
+The model's forecast for the 2016-2019 span seemed very similar to the actual data from 2016 to 2019, so my goal has been acheived. However, had such an extreme historical circumstance like a pandemic not happened, I believe it would have been accurate until 2023 as well.
+
+I would like to acknowledge Mayuresh Anand, TA Nicole Yang, and Professor Feldman for helping me with the code that comprised this project.
+
+# REFERENCES
+
+[https://dbedt.hawaii.gov/economic/qser/tourism/](https://dbedt.hawaii.gov/economic/qser/tourism/) - website that contains the full dataset I used for this project
+
+[https://www.rdocumentation.org/](https://dbedt.hawaii.gov/economic/qser/tourism/) - website that contains documentation for R functions, which I used extensively
+
+# APPENDIX
+
+```{r, eval=FALSE}
+# 1) READ IN THE DATA
+
+library(readr)
+file <- read_csv("~/UCSB/Spring 2020/PSTAT 174/Final Project/file.csv")
+
+
+# 2) LOAD THE DATASET WITH START DATE AND INTERVAL FREQUENCY
+
+yearRate <- read.table("file.csv", header=TRUE, sep=",")
+yearRate
+
+rate = ts(yearRate[,2], start=c(1982,1), end=c(2013,12), frequency = 4)
+
+
+# 3) PLOT THE TIME SERIES DATA
+
+ts.plot(rate, ylab ="Percentage of Hotel Rooms Occupied", main = "Hotel Room Occupancy")
+
+library(MASS)
+t = 1:length(rate)
+fit = lm(rate~t)
+bcTransform = boxcox(rate~t,plotit = TRUE)
+
+
+# 4) EXPLORE BOX-COX TRANSFORMATIONS
+
+lambda = bcTransform$x[which(bcTransform$y == max(bcTransform$y))]
+rate_BoxCoX = (1/lambda)*(rate^lambda-1)
+
+rate_BoxCoX_LOG = log(rate)
+
+par(mfrow=c(1,2))
+ts.plot(rate_BoxCoX)
+ts.plot(rate_BoxCoX_LOG)
+ts.plot(rate, ylab ="Percentage of Hotel Rooms Occupied", main = "Hotel Room Occupancy")
+
+plot(stl(rate, "periodic"))
+
+
+# 5) DIFFERENCE AT LAG=1 TO REMOVE TREND, MAKES MEAN CONSTANT
+
+rate_BC_D1 = diff(rate, lag = 1)
+ts.plot(rate_BC_D1)
+abline(h = 0,lty = 2)
+
+plot(stl(rate_BC_D1, "periodic"))
+
+
+# 6) DIFFERENCE AGAIN AT LAG=4 TO REMOVE SEASONALITY
+
+par(mfrow=c(1,2))
+
+rate_BC_d2 = diff(rate_BC_D1, lag = 2)
+ts.plot(rate_BC_d2)
+abline(h = 0,lty = 2)
+
+rate_BC_D2 = diff(rate_BC_D1, lag = 4)
+ts.plot(rate_BC_D2)
+abline(h = 0,lty = 2)
+
+print(c("Variance of the transformed timeseries at 2nd lag=2 is: ", var(rate_BC_d2)))
+print(c("Variance of the transformed timeseries at 2nd lag=4 is: ", var(rate_BC_D2)))
+
+
+# 7) EXAMINE THE ACF AND PACF (rate_BC_D2)
+
+op = par(mfrow = c(1,2))
+acf(rate_BC_D2,lag.max = 20,main = "")
+pacf(rate_BC_D2,lag.max = 20,main = "")
+title("De-trended/seasonalized Time Series",line = -1, outer=TRUE)
+
+
+# 8) MODEL ESTIMATION
+
+library(qpcR)
+library(astsa)
+
+aiccs = matrix(NA, nr=45, nc=3)
+colnames(aiccs) = c("p","q","AICc")
+i=0
+d=0
+for (p in 0:8) {
+  for (q in 0:4) {
+    aiccs[i+1, 1] = p
+    aiccs[i+1, 2] = q
+    aiccs[i+1, 3] = sarima(rate_BC_D2,p,d,q,P=1,D=1,Q=1,S=4,details=FALSE)$AICc
+    i=i+1
+  }
+}
+
+# Models with the first three smallest AICc
+aiccs[order(aiccs[,3])[1:3],]
+
+aiccS = matrix(NA, nr=45, nc=3)
+colnames(aiccS) = c("p","q","AICc")
+i=0
+d=0
+for (p in 0:8) {
+  for (q in 0:4) {
+    aiccS[i+1, 1] = p
+    aiccS[i+1, 2] = q
+    aiccS[i+1, 3] = sarima(rate_BC_D2,p,d,q,P=0,D=1,Q=1,S=4,details=FALSE)$AICc
+    i=i+1
+  }
+}
+
+# Models with the first three smallest AICc
+aiccS[order(aiccS[,3])[1:3],]
+
+library(forecast)
+auto.arima(rate)
+
+fit.1 = sarima(rate,0,1,4,0,1,1,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(0,1,4)x(0,1,1) are: ", c(fit.1$AICc, fit.1$BIC)))
+
+fit.2 = sarima(rate,8,1,0,2,1,0,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(8,1,0)x(2,1,0) are: ", c(fit.2$AICc, fit.2$BIC)))
+
+fit.3 = sarima(rate,4,1,2,0,1,0,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(4,1,2)x(0,1,0) are: ", c(fit.3$AICc, fit.3$BIC)))
+
+fit.4 = sarima(rate,1,0,0,1,1,0,4,details=FALSE)
+print(c("AICc and BIC of SARIMA(1,0,0)x(1,1,1) are: ", c(fit.4$AICc, fit.4$BIC)))
+
+
+# 9) FIT CANDIDATE MODELS
+
+fit <- arima(rate, order=c(1,0,0), seasonal=list(order=c(1,1,1), period=4))
+rsdls = residuals(fit)
+fit$coef
+
+
+# 10) PLOT THE AR AND MA ROOTS ON THE UNIT CIRCLE
+
+plot(fit)
+
+plot.roots <- function(ar.roots=NULL, ma.roots=NULL, size=2, angles=FALSE, special=NULL, sqecial=NULL,my.pch=1,first.col="blue",second.col="red",main=NULL)
+{xylims <- c(-size,size)
+      omegas <- seq(0,2*pi,pi/500)
+      temp <- exp(complex(real=rep(0,length(omegas)),imag=omegas))
+      plot(Re(temp),Im(temp),typ="l",xlab="x",ylab="y",xlim=xylims,ylim=xylims,main=main)
+      abline(v=0,lty="dotted")
+      abline(h=0,lty="dotted")
+      if(!is.null(ar.roots))
+        {
+          points(Re(1/ar.roots),Im(1/ar.roots),col=first.col,pch=my.pch)
+          points(Re(ar.roots),Im(ar.roots),col=second.col,pch=my.pch)
+        }
+      if(!is.null(ma.roots))
+        {
+          points(Re(1/ma.roots),Im(1/ma.roots),pch="*",cex=1.5,col=first.col)
+          points(Re(ma.roots),Im(ma.roots),pch="*",cex=1.5,col=second.col)
+        }
+      if(angles)
+        {
+          if(!is.null(ar.roots))
+            {
+              abline(a=0,b=Im(ar.roots[1])/Re(ar.roots[1]),lty="dotted")
+              abline(a=0,b=Im(ar.roots[2])/Re(ar.roots[2]),lty="dotted")
+            }
+          if(!is.null(ma.roots))
+            {
+              sapply(1:length(ma.roots), function(j) abline(a=0,b=Im(ma.roots[j])/Re(ma.roots[j]),lty="dotted"))
+            }
+        }
+      if(!is.null(special))
+        {
+          lines(Re(special),Im(special),lwd=2)
+        }
+      if(!is.null(sqecial))
+        {
+          lines(Re(sqecial),Im(sqecial),lwd=2)
+        }
+}
+
+plot.roots(NULL,polyroot(c(1, 0.6711421)),main="Roots of AR part")
+
+plot.roots(NULL,polyroot(c(1, 0.3107242)), main="Roots of SAR part")
+
+plot.roots(NULL,polyroot(c(1, -0.9528503)), main="Roots of SMA part")
+
+
+# 11) PLOT OF RESIDUALS
+
+plot(rsdls, main="Fitted Residuals")
+
+
+# 12) PLOT OF ACF, PACF, HISTOGRAM, AND QQPLOT
+
+op <- par(mfrow=c(2,2))
+acf(rsdls,main = "Autocorrelation")
+pacf(rsdls,main = "Partial Autocorrelation")
+hist(rsdls,main = "Histogram")
+qqnorm(rsdls,main = "QQPlot")
+qqline(rsdls,col="blue")
+par(op)
+
+
+# 13) DIAGNOSTIC TESTS
+
+# Residuals of SARIMA(1,0,0)x(1,1,1)_S=4
+
+# SHAPIRO WILK NORMALITY TEST
+shapiro.test(rsdls)
+
+# Ljung-Box TEST
+Box.test(rsdls, type = "Ljung-Box", lag = 11, fitdf = 3)
+
+# Box-Pierce TEST
+Box.test(rsdls, type = "Box-Pierce", lag = 11, fitdf = 3)
+
+# McLeod-Li TEST
+Box.test(rsdls^2, type = "Box-Pierce", lag = 11, fitdf = 0)
+
+
+# 14) PARAMETER ESTIMATION
+
+lmtest::coeftest(fit)
+round(confint(fit), 3)
+
+
+# 15) FORECASTING
+
+# Forecasting ahead
+forecast_Series <- predict(fit, n.ahead = 15)
+values = ((forecast_Series$pred))
+errors = ((forecast_Series$se))
+
+#errors = forecast_series$se
+print(values)
+print(errors)
+rate_2013 = ts(file[,2], start=c(1982,1), end=c(2016,12), frequency = 4)
+ts.plot(rate_2013)
+
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+
+
+# Forecasting ahead
+forecast_Series <- predict(fit, n.ahead = 30)
+values = ((forecast_Series$pred))
+errors = ((forecast_Series$se))
+
+#errors = forecast_series$se
+print(values)
+print(errors)
+rate_2013 = ts(file[,2], start=c(1982,1), end=c(2023,12), frequency = 4)
+ts.plot(rate_2013)
+
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+
+
+# Forecasting ahead
+forecast_Series <- predict(fit, n.ahead = 30)
+values = ((forecast_Series$pred))
+errors = ((forecast_Series$se))
+
+#errors = forecast_series$se
+print(values)
+print(errors)
+rate_2013 = ts(file[,2], start=c(1982,1), end=c(2023,12), frequency = 4)
+ts.plot(rate_2013)
+
+lines(values,lty=1,col="red")
+lines(values+1.96*errors,lty=2)
+lines(values-1.96*errors,lty=2)
+```
