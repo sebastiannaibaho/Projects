@@ -35,12 +35,12 @@ Stopword removal and lemmatization was done through [nltk](https://www.nltk.org)
 #### Number of Topics
 Optimal topic amounts were chosen using coherence score. We chose 4 total topic clusters rather than 7 as topics were unnecessarily subdivided into categories that were too narrow.
 
-![Number topics against coherence score](/markdown-assets/topic_coherence.png)
+![Number topics against coherence score](markdown-assets/topic_coherence.png)
 
 #### Optimal alpha value
 Once deciding on a topic number of 4, we tested various alpha values for the model and determined that alpha=90 was ideal as it yielded the highest coherence value. The alpha value determines document-topic density. The higher the alpha value, documents are composed of more topics. 
 
-![Alpha value against coherence score](/markdown-assets/alpha_coherence.png)
+![Alpha value against coherence score](markdown-assets/alpha_coherence.png)
 
 ### Building Final Model
 Now that we have determined the optimal number of topics and alpha value, we build our model. We use Mallet's built in hyperparameter optimization to constantly adjust alpha and beta parameters as the model is trained.
@@ -56,7 +56,7 @@ lda_model = gensim.models.wrappers.LdaMallet(mallet_path,
 
 ### Clustering
 Clustering visual data was done in pyLDAvis. On the left, the circles represent each topic cluster, with the size of the circle representing how prevalent that topic is. How close the circles are show how related certain topics are. Each topic cluster is labelled with how we flaired them for the viewer's convenience.
-![Mallet LDA Visualized](/markdown-assets/visualizedLDA4_optimized.png)
+![Mallet LDA Visualized](markdown-assets/visualizedLDA4_optimized.png)
 For an interactive version, open the .html file [here](https://github.com/sebastiannaibaho/r-UCSantaBarbara/blob/separate-function-branch/markdown-assets/visualizedLDA4_optimized.html)
 
 ## **The Reddit Bot**
