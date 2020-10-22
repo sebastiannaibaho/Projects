@@ -5,7 +5,7 @@ This project uses an unsupervised machine learning model to categorize posts in 
 
 ## **Motivation**
 Reddit is a popular social news platform that allows communities to discuss and vote on content that users submit. Our school’s subreddit, [/r/UCSantaBarbara](https://www.reddit.com/r/UCSantaBarbara/), is cluttered and unorganized. Currently more than 15,000 thousand members are on the UCSB subreddit and numerous posts are being added daily. Realizing that our school’s subreddit has the potential to be much more resourceful than it currently is, we decided that it would be helpful to create a model to organize its posts. 
-![UCSB Subreddit](/UCSB Subreddit Auto-Flair Machine Learning Project/markdown-assets/ucsb_subreddit.png)
+![UCSB Subreddit](/markdown-assets/ucsb_subreddit.png)
 
 ## **Methodology**
 ### Data Collection
