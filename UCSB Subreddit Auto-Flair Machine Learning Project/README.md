@@ -18,7 +18,7 @@ Posts were collected through pushshift.io. We considered only text posts and omi
 | soc           | anyone  | have    | pdf  | of       | the  | book   |      |               |          |        |       |     |         |       |         |        |     |       |    |     |      |     |      |    |      |     |        |    |     |    |       |      |     |         |      |      |      |          |    |        |    |      |    |      |       |     |      |        |     |      |     |    |     |    |    |       |    |    |     |    |     |        |          |      |     |     |      |    |     |       |    |       |    |        |      |      |     |    |      |      |      |     |         |         |      |     |     |     |      |    |     |
 
 A large obstacle to our project was the lack of labelled data sets. From the following graph only approximately 500 posts are flaired. We had to primarily rely on models that did not require labelled sets.
-![UCSB Subreddit Flair Distributions](/markdown-assets/flair_distributions.png)
+![UCSB Subreddit Flair Distributions](markdown-assets/flair_distributions.png)
 
 ### Latent Dirichlet Allocation
 Post data was further processed in the following order:
